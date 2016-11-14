@@ -4,6 +4,6 @@ The word clock 8x8 LED matrix module to shine light through a word mask printed 
 
 Additional hardware required is RTC clock module (DS3231 used here) and a momentary-on switch (tact switch or similar).
 
-More information on the Word Clock can be found in the blog article at the (Arduino++ blog[(https://arduinoplusplus.wordpress.com/2016/04/28/max7219-led-matrix-module-mini-word-clock/)
+More information on the Word Clock can be found in the blog article at the [Arduino++ blog](https://arduinoplusplus.wordpress.com/2016/04/28/max7219-led-matrix-module-mini-word-clock/)
 
 Uses the MD_MAX72xx, MD_KeySwitch and MD_DS3231 libraries found on this site.
