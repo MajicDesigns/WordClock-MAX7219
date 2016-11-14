@@ -33,13 +33,13 @@
 //
 // Library dependencies:
 // ---------------------
-// MD_DS1307 and MD_DS3231 RTC libraries found at 
-// https://arduinocode.codeplex.com/releases. Any other RTC may be 
+// MD_DS1307 and MD_DS3231 RTC libraries found at https://github.com/MajicDesigns/DS1307 
+// and https://github.com/MajicDesigns/DS3231. Any other RTC may be 
 // substitiuted with few changes as the current time is passed to all 
 // matrix display functions.
 //
-// MD_MAX72xx for the LED matrix and MD_KeySwitch library to for mode switch input
-// are found at https://arduinocode.codeplex.com/releases.
+// MD_MAX72xx library can be found at https://github.com/MajicDesigns/MAX72xx
+// MD_KeySwitch library is found at https://github.com/MajicDesigns/KeySwitch
 //
 
 #include <SPI.h>
