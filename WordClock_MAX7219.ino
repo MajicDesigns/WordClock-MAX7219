@@ -38,8 +38,8 @@
 // substitiuted with few changes as the current time is passed to all 
 // matrix display functions.
 //
-// MD_MAX72xx library can be found at https://github.com/MajicDesigns/MAX72xx
-// MD_KeySwitch library is found at https://github.com/MajicDesigns/KeySwitch
+// MD_MAX72xx library can be found at https://github.com/MajicDesigns/MD_MAX72XX
+// MD_KeySwitch library is found at https://github.com/MajicDesigns/MD_KeySwitch
 //
 
 #include <SPI.h>
