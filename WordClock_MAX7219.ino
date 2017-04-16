@@ -2,6 +2,10 @@
 // by Marco Colli
 //
 // April 2016 - version 1.0
+// - Initial release
+//
+// April 2017 - version 1.1
+// - Added summer time auto adjustment (long press)
 //
 // Description:
 // ------------
@@ -44,6 +48,7 @@
 
 #include <SPI.h>
 #include <Wire.h>       // I2C library for RTC
+#include <EEPROM.h>     // for saving summer time status
 #include <MD_MAX72xx.h>
 #include <MD_KeySwitch.h>
 #include <MD_DS3231.h>
@@ -58,6 +63,8 @@ const uint8_t CS_PIN = 10;   // (or SS) connect to matrix LOAD
 
 const uint8_t MODE_SW_PIN = 4; // setup pin connected to mode switch
 
+const uint8_t EE_SUMMER_FLAG = 0;
+
 // --------------------------------------
 // Miscelaneous defines
 const uint8_t   CLOCK_UPDATE_TIME = 5;  // in seconds - time resolution to nearest 5 minutes does not need rapid updates!
@@ -68,27 +75,28 @@ const uint32_t  SETUP_TIMEOUT = 10000;  // in milliseconds - timeout for setup m
 //  END OF USER CONFIGURABLE INFORMATION
 // --------------------------------------
 
-#define  DEBUG  0
+#define DEBUG 0
 
 // --------------------------------------
 // Enumerated types for state machines
-typedef enum stateRun_t { SR_UPDATE, SR_IDLE, SR_SETUP, SR_TIME };
+typedef enum stateRun_t { SR_UPDATE, SR_IDLE, SR_SETUP, SR_TIME, SR_SUMMER_TIME };
 typedef enum stateSetup_t { SS_DISP_HOUR, SS_HOUR, SS_DISP_MIN, SS_MIN, SS_END };
 
 // --------------------------------------
 // Global variables
 MD_KeySwitch  swMode(MODE_SW_PIN);            // mode/setup switch handler
 MD_MAX72XX    clock = MD_MAX72XX(CS_PIN, 1);  // SPI hardware interface
+
 //MD_MAX72XX clock = MD_MAX72XX(DATA_PIN, CLK_PIN, CS_PIN, 1); // Arbitrary pins
 
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
 #if  DEBUG
-#define	PRINT(s, x)	{ Serial.print(F(s)); Serial.print(x); }
-#define	PRINTS(x)	Serial.print(F(x))
-#define	PRINTD(x)	Serial.println(x, DEC)
+#define PRINT(s, x) { Serial.print(F(s)); Serial.print(x); }
+#define PRINTS(x) Serial.print(F(x))
+#define PRINTD(x) Serial.println(x, DEC)
 #else
-#define	PRINT(s, x)
+#define PRINT(s, x)
 #define PRINTS(x)
 #define PRINTD(x)
 #endif
@@ -113,6 +121,9 @@ const PROGMEM uint8_t fontMap[][FONT_ROWS] =
   { 0x7, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x0 }, // 7
   { 0x7, 0x5, 0x5, 0x7, 0x5, 0x5, 0x7, 0x0 }, // 8
   { 0x7, 0x5, 0x5, 0x7, 0x1, 0x1, 0x7, 0x0 }, // 9
+
+  { 0x0, 0x0, 0x2, 0x7, 0x2, 0x0, 0x0, 0x0 }, // +
+  { 0x0, 0x0, 0x0, 0x7, 0x0, 0x0, 0x0, 0x0 }, // -
 };
 
 // --------------------------------------
@@ -141,7 +152,7 @@ typedef struct clockWord_t
   uint8_t data;
 };
 
-// Minutes and to/past are always on ther same row, so they can be defined as 
+// Minutes and to/past are always on the same row, so they can be defined as 
 // individual elements.
 const PROGMEM clockWord_t M_05 = { 2, 0b11110000 };
 const PROGMEM clockWord_t M_10 = { 0, 0b01011000 };
@@ -172,11 +183,29 @@ const PROGMEM clockWord_t H_12[] = { { 6, 0b11110110 } };
 
 // --------------------------------------
 // Code
-void dumpTime()
-// Display current time to the debug display
+bool isSummerMode()
+// Return true if summer mode is active
 {
-  if (RTC.h < 10) PRINTS("0");
-  PRINT("", RTC.h);
+  return(EEPROM.read(EE_SUMMER_FLAG) != 0);
+}
+
+uint8_t currentHour(uint8_t h)
+// Change the RTC hour to include any summer time offset
+// Clock always holds the 'real' time.
+{
+  h += (isSummerMode() ? 1 : 0);
+  if (h > 12) h = 1;
+
+  return(h);
+}
+
+void dumpTime()
+// Show displayed time to the debug display
+{
+  uint8_t h = currentHour(RTC.h);
+
+  if (h < 10) PRINTS("0");
+  PRINT("", h);
   PRINTS(":");
   if (RTC.m < 10) PRINTS("0");
   PRINT("", RTC.m);
@@ -186,7 +215,23 @@ void dumpTime()
   PRINTS(" ");
 }
 
-void mapBuild(uint8_t *map, uint8_t num)
+void mapOffset(uint8_t *map, int8_t num)
+// *map is a pointer to a FONT_ROWS byte buffer to capture the 
+// rows of the mapped number, num is the offset single digit
+{
+  uint8_t sign = (num >= 0 ? 10 : 11); // 10th font char map is for a '+', the 11th for a '-'.
+
+  num = abs(num) % 10;  // positive single digit
+
+  for (uint8_t i = 0; i < FONT_ROWS; i++)
+  {
+    *map = pgm_read_byte(&fontMap[sign][i]) << 4;
+    *map |= pgm_read_byte(&fontMap[num][i]);
+    map++;
+  }
+}
+
+void mapNumber(uint8_t *map, uint8_t num)
 // *map is a pointer to a FONT_ROWS byte buffer to capture the 
 // rows of the mapped number, num is the decimal number to convert
 {
@@ -235,7 +280,7 @@ void setupTime(uint8_t &h, uint8_t &m)
     switch (state)
     {
     case SS_DISP_HOUR:   // show the hour
-      mapBuild(map, h);
+      mapNumber(map, currentHour(RTC.h));
       mapShow(map);
       state = SS_HOUR;
       break;
@@ -257,7 +302,7 @@ void setupTime(uint8_t &h, uint8_t &m)
       break;
 
     case SS_DISP_MIN:   // show the minutes
-      mapBuild(map, m);
+      mapNumber(map, m);
       mapShow(map);
       state = SS_MIN;
       break;
@@ -284,16 +329,31 @@ void setupTime(uint8_t &h, uint8_t &m)
   }
 }
 
+void flipSummerMode(void)
+// Reverse the the summer flag mode in the EEPROM
+{
+  uint8_t map[FONT_ROWS];
+ 
+  // handle EEPROM changes
+  EEPROM.write(EE_SUMMER_FLAG, isSummerMode() ? 0 : 1);
+  PRINT("\nNew Summer Mode ", isSummerMode());
+
+  // now show the current offset on the display
+  mapOffset(map, (isSummerMode() ? 1 : 0));
+  mapShow(map);
+  delay(SHOW_DELAY_TIME);
+}
+
 void showTime(uint8_t h, uint8_t m)
 // Display the current time in digits on the matrix.
 // Remains in this function until completed.
 {
   uint8_t map[FONT_ROWS];
 
-  mapBuild(map, h);
+  mapNumber(map, h);
   mapShow(map);
   delay(SHOW_DELAY_TIME);
-  mapBuild(map, m);
+  mapNumber(map, m);
   mapShow(map);
   delay(SHOW_DELAY_TIME);
 }
@@ -389,9 +449,9 @@ void updateClock(uint8_t h, uint8_t m)
 
   // hour - straight translation of nummber to data. However, the word can can 
   // span more than one line so the data is set up in arrays.
-	switch (h)
-	  {
-	  case  1: H = H_01;  numElements = ARRAY_SIZE(H_01);  PRINTS("ONE");  break;
+  switch (currentHour(h))
+    {
+    case  1: H = H_01;  numElements = ARRAY_SIZE(H_01);  PRINTS("ONE");  break;
     case  2: H = H_02;  numElements = ARRAY_SIZE(H_02);  PRINTS("TWO");  break;
     case  3: H = H_03;  numElements = ARRAY_SIZE(H_03);  PRINTS("THREE");  break;
     case  4: H = H_04;  numElements = ARRAY_SIZE(H_04);  PRINTS("FOUR");  break;
@@ -403,8 +463,8 @@ void updateClock(uint8_t h, uint8_t m)
     case 10: H = H_10;  numElements = ARRAY_SIZE(H_10);  PRINTS("TEN");  break;
     case 11: H = H_11;  numElements = ARRAY_SIZE(H_11);  PRINTS("ELEVEN");  break;
     case 12: H = H_12;  numElements = ARRAY_SIZE(H_12);  PRINTS("TWELVE");  break;
-	  }
-	  for (uint8_t i = 0; i < numElements; i++)
+    }
+    for (uint8_t i = 0; i < numElements; i++)
       clock.setRow(pgm_read_byte(&H[i].row), pgm_read_byte(&H[i].data));
 
   // finally, update the display with new data
@@ -422,12 +482,13 @@ void setup()
   clock.control(MD_MAX72XX::INTENSITY, 2 + (MAX_INTENSITY / 2));
 
   swMode.begin();
-  swMode.enableLongPress(false);
-  swMode.setRepeatTime(300);
+  swMode.enableRepeat(false);
 
   // turn the clock on to 12H mode and make sure it is running
   RTC.control(DS3231_12H, DS3231_ON);
   RTC.control(DS3231_CLOCK_HALT, DS3231_OFF);
+
+  PRINT("\nSummer Mode ", isSummerMode());
 }
 
 void loop() 
@@ -452,8 +513,9 @@ void loop()
     // ... user input from mode switch
     switch (swMode.read())
     {
-    case MD_KeySwitch::KS_DPRESS: state = SR_SETUP; break;
-    case MD_KeySwitch::KS_PRESS:  state = SR_TIME; break;
+    case MD_KeySwitch::KS_DPRESS:    state = SR_SETUP; break;
+    case MD_KeySwitch::KS_PRESS:     state = SR_TIME; break;
+    case MD_KeySwitch::KS_LONGPRESS: state = SR_SUMMER_TIME; break;
     }
     break;
 
@@ -468,7 +530,12 @@ void loop()
     break;
 
   case SR_TIME:   // show time as digits
-    showTime(RTC.h, RTC.m);
+    showTime(currentHour(RTC.h), RTC.m);
+    state = SR_UPDATE;
+    break;
+
+  case SR_SUMMER_TIME:  // handle the summer time selection
+    flipSummerMode();
     state = SR_UPDATE;
     break;
 
