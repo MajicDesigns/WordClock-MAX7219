@@ -7,6 +7,9 @@
 // April 2017 - version 1.1
 // - Added summer time auto adjustment (long press)
 //
+// June 2019 - version 1.2
+// - Changed for new MD_MAX72xx library hardware definition
+//
 // Description:
 // ------------
 // The word clock 8x8 LED matrix module to shine light through a 
@@ -85,9 +88,9 @@ typedef enum stateSetup_t { SS_DISP_HOUR, SS_HOUR, SS_DISP_MIN, SS_MIN, SS_END }
 // --------------------------------------
 // Global variables
 MD_KeySwitch  swMode(MODE_SW_PIN);            // mode/setup switch handler
-MD_MAX72XX    clock = MD_MAX72XX(CS_PIN, 1);  // SPI hardware interface
+MD_MAX72XX    clock = MD_MAX72XX(MD_MAX72XX::FC16_HW, CS_PIN, 1);  // SPI hardware interface
 
-//MD_MAX72XX clock = MD_MAX72XX(DATA_PIN, CLK_PIN, CS_PIN, 1); // Arbitrary pins
+//MD_MAX72XX clock = MD_MAX72XX(MD_MAX72XX::FC16_HW, DATA_PIN, CLK_PIN, CS_PIN, 1); // Arbitrary pins
 
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof(a[0]))
 
